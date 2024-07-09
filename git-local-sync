@@ -9,7 +9,7 @@ _SLEEP=${GIT_LOCAL_SYNC_SLEEP:-60}
 export GIT_TERMINAL_PROMPT=false
 
 function exitClean() {
-    # If any git operation is ongoing, wait for it to finish then exit.
+    # If there is any git operation ongoing, wait for it to finish then exit.
     trap - SIGINT SIGTERM EXIT
 
     while [[ `pgrep --count --full "git .*${_repository_url}.*"` -ne 0 ]]; do
@@ -21,7 +21,10 @@ function exitClean() {
 }
 
 function usage() {
-    echo "docker container run -t -v $(pwd)/ssh-key:/key -v target-volume:/repo git-ro-sync:latest [--help] [--branch branch-name] url"
+    echo "Usage:"
+    echo "    git-local-sync [--help] [--branch branch-name] git-url"
+    echo "  or with podman/docker"
+    echo "    docker container run -t -v $(pwd)/ssh-key:/key -v target-volume:/repo git-local-sync:latest [--help] [--branch branch-name] git-url"
     exit 0
 }
 
@@ -54,7 +57,7 @@ fi
 if `git -C /repo rev-parse 2>/dev/null`; then
     if [[ "$(git -C /repo remote get-url origin)" != "$_repository_url" ]]; then
         echo >&2 "The destination folder already contains the $(git -C /repo remote get-url origin) repository."
-        echo >&2 "You can't use it to monitor the $_repository_url repository"
+        echo >&2 "You can't use it to monitor the $_repository_url repository."
         exit 1
     fi
 # Check if the destination folder is not empty

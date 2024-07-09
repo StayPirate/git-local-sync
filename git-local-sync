@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+trap exitClean SIGINT SIGTERM EXIT
+
+# Every _SLEEP seconds this script attempts to sync the local repo with the remote one.
+# You can change it by setting the GIT_LOCAL_SYNC_SLEEP environment variable.
+_SLEEP=${GIT_LOCAL_SYNC_SLEEP:-60}
+# Do not hang in interactive promtps
+# https://git-scm.com/docs/git#Documentation/git.txt-codeGITTERMINALPROMPTcode
+export GIT_TERMINAL_PROMPT=false
+
+function exitClean() {
+    # If any git operation is ongoing, wait for it to finish then exit.
+    trap - SIGINT SIGTERM EXIT
+
+    while [[ `pgrep --count --full "git .*${_repository_url}.*"` -ne 0 ]]; do
+        echo >&2 "There is an ongoing git operation, the script will terminate once it has done."
+        sleep 5
+    done
+
+    exit 0
+}
+
+function usage() {
+    echo "docker container run -t -v $(pwd)/ssh-key:/key -v target-volume:/repo git-ro-sync:latest [--help] [--branch branch-name] url"
+    exit 0
+}
+
+function echodate() {
+    echo "[$(date +"%d/%m/%Y %H:%M:%S %Z")]: $1"
+}
+
+while :; do
+    case "${1:-}" in
+        --branch) shift; _branch="${1}" ;;
+        --help) usage ;;
+        -?*) echo >&2 "Unknown option: ${1:-}"; exit 1 ;;
+        *) break ;;
+    esac
+    shift
+done
+
+[ -z $1 ] && usage
+
+_repository_url="$1"
+[[ -z $_branch ]] && _branch=master # If not specified, deafult to "master" branch
+
+# Check if the remote repository exists
+if [[ ! $(git ls-remote --quiet $_repository_url refs/heads/$_branch) ]]; then
+    echo >&2 "The $_branch branch at $_repository_url, does not exist."
+    exit 0
+fi
+
+# Check if the destination folder is populated with a different repository.
+if `git -C /repo rev-parse 2>/dev/null`; then
+    if [[ "$(git -C /repo remote get-url origin)" != "$_repository_url" ]]; then
+        echo >&2 "The destination folder already contains the $(git -C /repo remote get-url origin) repository."
+        echo >&2 "You can't use it to monitor the $_repository_url repository"
+        exit 1
+    fi
+# Check if the destination folder is not empty
+elif [[ `ls -A /repo` ]]; then
+    echo >&2 "The destination folder (/repo) is not empty."
+    exit 1
+fi
+
+echodate "Start monitoring ${_repository_url} on branch ${_branch}"
+
+while true; do
+    # Check if the local repository exists otherwise clone it.
+    if ! `git -C /repo rev-parse 2>/dev/null`; then
+        echodate "Cloning the repository because it does not yet exist locally."
+        git -C /repo clone --quiet ${_branch/#/-b } $_repository_url .
+    else
+        # Check if the remote repo has changed. If so, update the local one.
+        git -C /repo fetch --quiet origin $_branch
+        git -C /repo switch --quiet $_branch
+        _last_local_commit_id=$(git -C /repo rev-parse refs/heads/$_branch)
+        _last_remote_commit_id=$(git -C /repo rev-parse refs/remotes/origin/$_branch)
+        if [[ "$_last_local_commit_id" != "$_last_remote_commit_id" ]]; then
+            echodate "$(git -C /repo reset --hard "origin/${_branch}")"
+        fi
+    fi
+
+    # Wait until next sync attempt.
+    sleep $_SLEEP
+done

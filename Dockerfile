@@ -10,7 +10,7 @@ RUN apk add --no-cache  git \
     mkdir -p /repo && \
     chown app:app /repo
 
-RUN	echo "StrictHostKeyChecking no" >> /etc/ssh/ssh_config && \
+RUN echo "StrictHostKeyChecking no" >> /etc/ssh/ssh_config && \
     echo "IdentityFile /key" >> etc/ssh/ssh_config && \
     echo "BatchMode yes" >> etc/ssh/ssh_config
 
